@@ -33,6 +33,15 @@ impl MaybeUdsStream {
         })
     }
 
+    #[allow(dead_code)]
+    pub fn is_tcp(&self) -> bool {
+        match self.inner {
+            Inner::MaybeTls(_) => true,
+            #[cfg(all(feature = "postgres", unix))]
+            Inner::UnixStream(_) => false,
+        }
+    }
+
     #[cfg(feature = "tls")]
     #[cfg_attr(docsrs, doc(cfg(feature = "tls")))]
     pub async fn upgrade(

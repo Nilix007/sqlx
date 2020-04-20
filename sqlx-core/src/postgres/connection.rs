@@ -255,7 +255,12 @@ impl PgConnection {
         let url = url?;
         let mut stream = PgStream::new(&url).await?;
 
-        tls::request_if_needed(&mut stream, &url).await?;
+        // We will only do TLS if we're connected via TCP/IP.
+        //
+        // If we're connected via a Unix domain socket, we won't do TLS even if `sslmode` tells us
+        // to do so.  This is in line with the behaviour of libpq.
+        if stream.stream.is_tcp() { tls::request_if_needed(&mut stream, &url).await?; }
+
         let key_data = startup(&mut stream, &url).await?;
 
         Ok(Self {
