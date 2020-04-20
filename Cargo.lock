@@ -1737,6 +1737,7 @@ dependencies = [
  "tokio 0.2.13",
  "url",
  "uuid",
+ "whoami",
 ]
 
 [[package]]
@@ -2430,6 +2431,12 @@ name = "wasm-bindgen-shared"
 version = "0.2.60"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "daf76fe7d25ac79748a37538b7daeed1c7a6867c92d3245c12c6222e4a20d639"
+
+[[package]]
+name = "whoami"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a08eb844b158ea881e81b94556eede7f7e306e4c7b976aad88f49e6e36dec391"
 
 [[package]]
 name = "winapi"

@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::sync::Arc;
@@ -110,12 +109,10 @@ pub struct PgConnection {
 
 // https://www.postgresql.org/docs/12/protocol-flow.html#id-1.10.5.7.3
 async fn startup(stream: &mut PgStream, url: &Url) -> crate::Result<BackendKeyData> {
-    // Defaults to $USER@.../$USER
-    // and falls back to postgres@.../postgres
+    // Defaults to username@.../username
     let username = url
         .username()
-        .or_else(|| std::env::var("USER").map(Cow::Owned).ok())
-        .unwrap_or(Cow::Borrowed("postgres"));
+        .unwrap_or_else(|| whoami::username().into());
     let database = url.database().unwrap_or(&username);
 
     // See this doc for more runtime parameters
