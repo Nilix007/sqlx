@@ -3,39 +3,34 @@ use std::net::Shutdown;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::runtime::{AsyncRead, AsyncWrite, TcpStream};
+use crate::runtime::{AsyncRead, AsyncWrite};
+use super::MaybeTlsStream;
 
 use self::Inner::*;
 
-pub struct MaybeTlsStream {
+pub struct MaybeUdsStream {
     inner: Inner,
 }
 
 enum Inner {
-    NotTls(TcpStream),
-    #[cfg(feature = "tls")]
-    Tls(async_native_tls::TlsStream<TcpStream>),
-    #[cfg(feature = "tls")]
-    Upgrading,
+    MaybeTls(MaybeTlsStream),
+    #[cfg(all(feature = "postgres", unix))]
+    UnixStream(crate::runtime::UnixStream),
 }
 
-impl MaybeTlsStream {
-    pub async fn connect(host: &str, port: u16) -> crate::Result<Self> {
-        let conn = TcpStream::connect((host, port)).await?;
+impl MaybeUdsStream {
+    #[cfg(all(feature = "postgres", unix))]
+    pub async fn connect_uds<S: AsRef<std::ffi::OsStr>>(p: S) -> crate::Result<Self> {
+        let conn = crate::runtime::UnixStream::connect(p.as_ref()).await?;
         Ok(Self {
-            inner: Inner::NotTls(conn),
+            inner: Inner::UnixStream(conn),
         })
     }
-
-    #[allow(dead_code)]
-    pub fn is_tls(&self) -> bool {
-        match self.inner {
-            Inner::NotTls(_) => false,
-            #[cfg(feature = "tls")]
-            Inner::Tls(_) => true,
-            #[cfg(feature = "tls")]
-            Inner::Upgrading => false,
-        }
+    pub async fn connect(host: &str, port: u16) -> crate::Result<Self> {
+        let conn = MaybeTlsStream::connect(host, port).await?;
+        Ok(Self {
+            inner: Inner::MaybeTls(conn),
+        })
     }
 
     #[cfg(feature = "tls")]
@@ -45,25 +40,20 @@ impl MaybeTlsStream {
         host: &str,
         connector: async_native_tls::TlsConnector,
     ) -> crate::Result<()> {
-        let conn = match std::mem::replace(&mut self.inner, Upgrading) {
-            NotTls(conn) => conn,
-            Tls(_) => return Err(tls_err!("connection already upgraded").into()),
-            Upgrading => return Err(tls_err!("connection already failed to upgrade").into()),
-        };
-
-        self.inner = Tls(connector.connect(host, conn).await?);
-
-        Ok(())
+        match &mut self.inner {
+            MaybeTls(conn) => conn.upgrade(host, connector).await,
+            #[cfg(all(feature = "postgres", unix))]
+            UnixStream(_) => {
+                return Err(tls_err!("TLS is not supported with unix domain sockets").into())
+            }
+        }
     }
 
     pub fn shutdown(&self, how: Shutdown) -> io::Result<()> {
         match self.inner {
-            NotTls(ref conn) => conn.shutdown(how),
-            #[cfg(feature = "tls")]
-            Tls(ref conn) => conn.get_ref().shutdown(how),
-            #[cfg(feature = "tls")]
-            // connection already closed
-            Upgrading => Ok(()),
+            MaybeTls(ref conn) => conn.shutdown(how),
+            #[cfg(all(feature = "postgres", unix))]
+            UnixStream(ref conn) => conn.shutdown(how),
         }
     }
 }
@@ -71,16 +61,14 @@ impl MaybeTlsStream {
 macro_rules! forward_pin (
     ($self:ident.$method:ident($($arg:ident),*)) => (
         match &mut $self.inner {
-            NotTls(ref mut conn) => Pin::new(conn).$method($($arg),*),
-            #[cfg(feature = "tls")]
-            Tls(ref mut conn) => Pin::new(conn).$method($($arg),*),
-            #[cfg(feature = "tls")]
-            Upgrading => Err(io::Error::new(io::ErrorKind::Other, "connection broken; TLS upgrade failed")).into(),
+            MaybeTls(ref mut conn) => Pin::new(conn).$method($($arg),*),
+            #[cfg(all(feature = "postgres", unix))]
+            UnixStream(ref mut conn) => Pin::new(conn).$method($($arg),*),
         }
     )
 );
 
-impl AsyncRead for MaybeTlsStream {
+impl AsyncRead for MaybeUdsStream {
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context,
@@ -99,7 +87,7 @@ impl AsyncRead for MaybeTlsStream {
     }
 }
 
-impl AsyncWrite for MaybeTlsStream {
+impl AsyncWrite for MaybeUdsStream {
     fn poll_write(
         mut self: Pin<&mut Self>,
         cx: &mut Context,
@@ -131,3 +119,4 @@ impl AsyncWrite for MaybeTlsStream {
         forward_pin!(self.poll_write_vectored(cx, bufs))
     }
 }
+

@@ -4,7 +4,7 @@ use std::net::Shutdown;
 use byteorder::NetworkEndian;
 use futures_channel::mpsc::UnboundedSender;
 
-use crate::io::{Buf, BufStream, MaybeTlsStream};
+use crate::io::{Buf, BufStream, MaybeUdsStream};
 use crate::postgres::protocol::{Message, NotificationResponse, Response, Write};
 use crate::postgres::PgError;
 
@@ -12,7 +12,7 @@ use crate::url::Url;
 use futures_util::SinkExt;
 
 pub struct PgStream {
-    pub(super) stream: BufStream<MaybeTlsStream>,
+    pub(super) stream: BufStream<MaybeUdsStream>,
     pub(super) notifications: Option<UnboundedSender<NotificationResponse<'static>>>,
 
     // Most recently received message
@@ -37,13 +37,13 @@ impl PgStream {
                 .unwrap_or("/var/run/postgresql".into());
             if host.starts_with("/") {
                 let path = format!("{}/.s.PGSQL.{}", host, port);
-                MaybeTlsStream::connect_uds(&path).await?
+                MaybeUdsStream::connect_uds(&path).await?
             } else {
-                MaybeTlsStream::connect(&host, port).await?
+                MaybeUdsStream::connect(&host, port).await?
             }
         };
         #[cfg(not(unix))]
-        let stream = MaybeTlsStream::connect(host.unwrap_or("localhost"), port).await?;
+        let stream = MaybeUdsStream::connect(host.unwrap_or("localhost"), port).await?;
 
         Ok(Self {
             notifications: None,

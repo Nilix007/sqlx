@@ -5,6 +5,7 @@ mod buf;
 mod buf_mut;
 mod byte_str;
 mod tls;
+mod uds;
 
 pub use self::{
     buf::{Buf, ToBuf},
@@ -12,6 +13,7 @@ pub use self::{
     buf_stream::BufStream,
     byte_str::ByteStr,
     tls::MaybeTlsStream,
+    uds::MaybeUdsStream,
 };
 
 #[cfg(test)]
